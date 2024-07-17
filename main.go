@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"log"
 	"math/big"
@@ -21,9 +22,22 @@ func main() {
 	}
 	defer client.Close()
 
+	// Open or create a CSV file for writing
+	csvFile, err := os.Create("events.csv")
+	if err != nil {
+		log.Fatalf("Failed to create CSV file: %v", err)
+	}
+	defer csvFile.Close()
+
+	writer := csv.NewWriter(csvFile)
+	defer writer.Flush()
+
+	// Write CSV header
+	writer.Write([]string{"Block Number", "Timestamp", "Data"})
+
 	// Set the start time to one month before the current time and end time to the current time
-	endTime := time.Now()
-	startTime := endTime.AddDate(0, -1, 0)
+	endTime := time.Now().AddDate(0, -5, -25)
+	startTime := endTime.AddDate(-1, 0, 0)
 
 	startBlock, err := findBlockByTimestamp(client, startTime.Unix())
 	if err != nil {
@@ -34,7 +48,7 @@ func main() {
 		log.Fatalf("Failed to find end block: %v", err)
 	}
 
-	blockRange := big.NewInt(1000) // Define the size of each block range
+	blockRange := big.NewInt(1000)
 	contractAddress := common.HexToAddress("0xdf0527bDe17EBd936Ff0BC5082930769022C5c91")
 	mintedEventSignature := common.HexToHash("0xf9f4d81453ddebad232670c9402c17d910e88b4e805cf759f854b4d387fc7f61")
 
@@ -58,12 +72,12 @@ func main() {
 		}
 
 		for _, vLog := range logs {
-			handleLog(client, vLog)
+			handleLog(client, writer, vLog)
 		}
 	}
 }
 
-func handleLog(client *ethclient.Client, vLog types.Log) {
+func handleLog(client *ethclient.Client, writer *csv.Writer, vLog types.Log) {
 	block, err := client.BlockByNumber(context.Background(), big.NewInt(int64(vLog.BlockNumber)))
 	if err != nil {
 		log.Fatalf("Failed to fetch block: %v", err)
@@ -72,6 +86,8 @@ func handleLog(client *ethclient.Client, vLog types.Log) {
 
 	blockTime := time.Unix(int64(block.Time()), 0)
 	fmt.Printf("Found event: Block %v, Timestamp %v, Data %x\n", vLog.BlockNumber, blockTime, vLog.Data)
+	// Write event details to CSV
+	writer.Write([]string{fmt.Sprintf("%d", vLog.BlockNumber), blockTime.Format(time.RFC3339), fmt.Sprintf("%x", vLog.Data)})
 }
 
 func findBlockByTimestamp(client *ethclient.Client, timestamp int64) (*big.Int, error) {
